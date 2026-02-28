@@ -29,7 +29,7 @@ extension Data {
         //    return map { String(format: "%02x", $0) }.joined(separator: ", ")
     }
 
-    // Extension for CRC32 calculation
+    /// Extension for CRC32 calculation
     var crc32: UInt32 {
         return withUnsafeBytes { bytes in
             let buffer = bytes.bindMemory(to: UInt8.self)
@@ -88,7 +88,7 @@ struct BufferedCommand {
     let ignoreAck: Bool
     let chunkTimeMs: Int
     let lastFrameMs: Int
-    let bypassReadyCheck: Bool  // Allow sending before fully ready (for init commands)
+    let bypassReadyCheck: Bool // Allow sending before fully ready (for init commands)
 
     init(
         chunks: [[UInt8]], sendLeft: Bool = true, sendRight: Bool = true, waitTime: Int = -1,
@@ -106,7 +106,7 @@ struct BufferedCommand {
     }
 }
 
-// Simple struct to hold app info
+/// Simple struct to hold app info
 struct AppInfo {
     let id: String
     let name: String
@@ -116,7 +116,7 @@ enum GlassesError: Error {
     case missingGlasses(String)
 }
 
-// Connection state for BLE peripheral
+/// Connection state for BLE peripheral
 enum ConnectionState {
     case disconnected
     case connecting
@@ -125,17 +125,17 @@ enum ConnectionState {
     case ready
 }
 
-// Track connection state for both peripherals
+/// Track connection state for both peripherals
 class PeripheralState {
     var left: ConnectionState = .disconnected
     var right: ConnectionState = .disconnected
-    
+
     var isFullyReady: Bool {
         return left == .ready && right == .ready
     }
 }
 
-// Dedicated actor for timer management
+/// Dedicated actor for timer management
 actor HeartbeatManager {
     private var task: Task<Void, Never>?
     private let intervalSeconds: TimeInterval
@@ -166,7 +166,7 @@ actor HeartbeatManager {
     }
 }
 
-// Dedicated actor for command queue (you already have this partially)
+/// Dedicated actor for command queue (you already have this partially)
 actor CommandQueue {
     private var commands: [BufferedCommand] = []
     private var continuation: CheckedContinuation<BufferedCommand, Never>?
@@ -190,7 +190,7 @@ actor CommandQueue {
             self.continuation = continuation
         }
     }
-    
+
     func clear() {
         commands.removeAll()
         // Cancel any waiting continuation
@@ -202,7 +202,7 @@ actor CommandQueue {
     }
 }
 
-// Actor for managing pending ACKs
+/// Actor for managing pending ACKs
 actor AckManager {
     private var pending: [String: CheckedContinuation<Bool, Never>] = [:]
 
@@ -244,7 +244,7 @@ actor AckManager {
     }
 }
 
-// Actor for reconnection logic
+/// Actor for reconnection logic
 actor ReconnectionManager {
     private var task: Task<Void, Never>?
     private let intervalSeconds: TimeInterval
@@ -265,22 +265,22 @@ actor ReconnectionManager {
     var attemptCount: Int {
         attempts
     }
-    
-    // Calculate backoff delay based on attempt count
+
+    /// Calculate backoff delay based on attempt count
     private func getBackoffDelay() -> TimeInterval {
         let index = min(attempts, backoffDelays.count - 1)
         return backoffDelays[index]
     }
-    
-    // Check if enough time has passed for next attempt
+
+    /// Check if enough time has passed for next attempt
     func shouldAttemptReconnection() -> (should: Bool, delay: TimeInterval) {
         guard let lastAttempt = lastAttemptTime else {
             return (true, 0)
         }
-        
+
         let backoffDelay = getBackoffDelay()
         let timeSinceLastAttempt = Date().timeIntervalSince(lastAttempt)
-        
+
         if timeSinceLastAttempt >= backoffDelay {
             return (true, 0)
         } else {
@@ -288,8 +288,8 @@ actor ReconnectionManager {
             return (false, remainingDelay)
         }
     }
-    
-    // Reset backoff after successful stable connection
+
+    /// Reset backoff after successful stable connection
     func reset() {
         attempts = 0
         lastAttemptTime = nil
@@ -446,7 +446,9 @@ class G1: NSObject, SGCManager {
     let hasMic = true
 
     // TODO: we probably don't need this
-    @objc static func requiresMainQueueSetup() -> Bool { return true }
+    @objc static func requiresMainQueueSetup() -> Bool {
+        return true
+    }
 
     // Duplicate BMP prevention with timeout
     private var isDisplayingBMP = false
@@ -492,8 +494,8 @@ class G1: NSObject, SGCManager {
 
     var leftReady: Bool = false
     var rightReady: Bool = false
-    
-    // Connection state tracking for BLE stability
+
+    /// Connection state tracking for BLE stability
     private let peripheralState = PeripheralState()
 
     @Published var compressedVoiceData: Data = .init()
@@ -751,7 +753,7 @@ class G1: NSObject, SGCManager {
 
     // @@@ REACT NATIVE FUNCTIONS @@@
 
-    // this scans for glasses to connect to and only connnects if SEARCH_ID is set
+    /// this scans for glasses to connect to and only connnects if SEARCH_ID is set
     func startScan() -> Bool {
         if centralManager == nil {
             centralManager = CBCentralManager(
@@ -769,7 +771,7 @@ class G1: NSObject, SGCManager {
         // send our already connected devices to RN:
         let devices = getConnectedDevices()
         Bridge.log("G1: connnectedDevices.count: (\(devices.count))")
-        
+
         // If devices are already connected, disconnect them first for a clean reconnect
         if !devices.isEmpty {
             Bridge.log("G1: Found \(devices.count) already-connected devices, disconnecting for clean reconnect")
@@ -790,7 +792,7 @@ class G1: NSObject, SGCManager {
             }
             return true
         }
-        
+
         for device in devices {
             if let name = device.name {
                 Bridge.log("G1: Connected to device: \(name)")
@@ -832,24 +834,20 @@ class G1: NSObject, SGCManager {
         startScan()
     }
 
-    // connect to glasses we've discovered:
+    /// connect to glasses we've discovered:
     @objc func RN_connectGlasses() -> Bool {
         Bridge.log("RN_connectGlasses()")
 
-        if let side = leftPeripheral {
-            Bridge.log("G1: connecting to left glass: \(side.name ?? "(unknown)")")
-            centralManager!.connect(side, options: nil)
-        }
-
-        if let side = rightPeripheral {
-            Bridge.log("G1: connecting to right glass: \(side.name ?? "(unknown)")")
-            centralManager!.connect(side, options: nil)
-        }
-
-        // just return if we don't have both a left and right arm:
-        guard leftPeripheral != nil && rightPeripheral != nil else {
+        // Ensure we have both peripherals before attempting connection
+        guard let left = leftPeripheral, let right = rightPeripheral else {
             return false
         }
+
+        // Connect BOTH simultaneously to avoid timing issues (like EvenDemoApp)
+        centralManager!.connect(left, options: [CBConnectPeripheralOptionNotifyOnDisconnectionKey: true])
+        centralManager!.connect(right, options: [CBConnectPeripheralOptionNotifyOnDisconnectionKey: true])
+
+        Bridge.log("G1: Connecting to both glasses: \(left.name ?? "?"), \(right.name ?? "?")")
 
         Bridge.log(
             "G1: found both glasses \(leftPeripheral!.name ?? "(unknown)"), \(rightPeripheral!.name ?? "(unknown)") stopping scan"
@@ -998,7 +996,8 @@ class G1: NSObject, SGCManager {
             // Calculate payload length
             let fixedBytes: [UInt8] = [0x03, 0x01, 0x00, 0x01, 0x00]
             let versionByte = UInt8(
-                Date().timeIntervalSince1970.truncatingRemainder(dividingBy: 256))
+                Date().timeIntervalSince1970.truncatingRemainder(dividingBy: 256)
+            )
             let payloadLength =
                 1 // Fixed byte
                 + 1 // Version byte
@@ -1052,7 +1051,7 @@ class G1: NSObject, SGCManager {
         quickNotes.removeAll()
     }
 
-    // only set to true when we receive init_ack response from the glasses
+    /// only set to true when we receive init_ack response from the glasses
     func setReadiness(left: Bool?, right: Bool?) {
         let prevLeftReady = leftReady
         let prevRightReady = rightReady
@@ -1073,10 +1072,10 @@ class G1: NSObject, SGCManager {
         //         CoreCommsService.log("g1Ready set to \(leftReady) \(rightReady) \(leftReady && rightReady) left: \(left), right: \(right)")
         let wasReady = ready
         ready = leftReady && rightReady
-        
+
         if ready {
             stopReconnectionTimer()
-            
+
             // Start stable connection timer if transitioning to ready
             if !wasReady {
                 startStableConnectionTimer()
@@ -1087,17 +1086,17 @@ class G1: NSObject, SGCManager {
             stableConnectionTask = nil
         }
     }
-    
-    // Start timer to reset reconnection backoff after 30s of stable connection
+
+    /// Start timer to reset reconnection backoff after 30s of stable connection
     private func startStableConnectionTimer() {
         stableConnectionTask?.cancel()
-        
+
         stableConnectionTask = Task { [weak self] in
             do {
                 try await Task.sleep(nanoseconds: 30_000_000_000) // 30 seconds
-                
+
                 guard let self = self, !Task.isCancelled else { return }
-                
+
                 // Reset reconnection backoff after stable connection
                 await self.reconnectionManager.reset()
             } catch {
@@ -1105,18 +1104,18 @@ class G1: NSObject, SGCManager {
             }
         }
     }
-    
-    // Helper method to update connection state with logging
+
+    /// Helper method to update connection state with logging
     private func updateConnectionState(for peripheral: CBPeripheral, to newState: ConnectionState) {
         let peripheralName = peripheral == leftPeripheral ? "L" : "R"
         let oldState = peripheral == leftPeripheral ? peripheralState.left : peripheralState.right
-        
+
         if peripheral == leftPeripheral {
             peripheralState.left = newState
         } else if peripheral == rightPeripheral {
             peripheralState.right = newState
         }
-        
+
         let timestamp = DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .medium)
         Bridge.log("🔄 [\(timestamp)] \(peripheralName) state: \(oldState) → \(newState)")
     }
@@ -1163,7 +1162,8 @@ class G1: NSObject, SGCManager {
     }
 
     private func attemptSend(cmd: BufferedCommand, side: String) async {
-        var maxAttempts = 5
+        // Increase retries for faulty right glass BLE radio
+        var maxAttempts = side == "R" ? 10 : 5
         var attempts = 0
         var success = false
         let chunks = cmd.chunks
@@ -1186,7 +1186,9 @@ class G1: NSObject, SGCManager {
                 let firstFewBytes = String(Data(chunk).hexEncodedString().prefix(16))
                 // CoreCommsService.log("SEND (\(side)) \(firstFewBytes)")
                 await sendCommandToSideWithoutResponse(chunk, side: side)
-                try? await Task.sleep(nanoseconds: UInt64(cmd.chunkTimeMs) * 1_000_000) // 8ms
+                // Longer delay for faulty right glass BLE radio
+                let delayMs = side == "R" ? cmd.chunkTimeMs * 2 : cmd.chunkTimeMs
+                try? await Task.sleep(nanoseconds: UInt64(delayMs) * 1_000_000)
             }
 
             let lastChunk = chunks.last!
@@ -1249,13 +1251,13 @@ class G1: NSObject, SGCManager {
         }
     }
 
-    // Process a single number with timeouts
+    /// Process a single number with timeouts
     private func processCommand(_ command: BufferedCommand) async {
         if command.chunks.isEmpty {
             Bridge.log("G1: @@@ chunks was empty! @@@")
             return
         }
-        
+
         // Check if peripherals are fully ready before sending (unless bypassed for init)
         if !command.bypassReadyCheck && !peripheralState.isFullyReady {
             Bridge.log("⚠️ Skipping command - peripherals not ready (L: \(peripheralState.left), R: \(peripheralState.right))")
@@ -1306,10 +1308,9 @@ class G1: NSObject, SGCManager {
     }
 
     private func getConnectedDevices() -> [CBPeripheral] {
-        let connectedPeripherals = centralManager!.retrieveConnectedPeripherals(withServices: [
+        return centralManager!.retrieveConnectedPeripherals(withServices: [
             UART_SERVICE_UUID,
         ])
-        return connectedPeripherals
     }
 
     private func handleAck(from peripheral: CBPeripheral, success: Bool, sequenceNumber: Int = -1) {
@@ -1403,13 +1404,27 @@ class G1: NSObject, SGCManager {
             // if left, update left battery level, if right, update right battery level
             if peripheral == leftPeripheral {
                 if leftBatteryLevel != batteryPercent {
-                    Bridge.log("G1: Left glass battery: \(batteryPercent)%")
+                    Bridge.log("G1: Left glass battery: \(batteryPercent)% (state: \(peripheralState.left))")
                     leftBatteryLevel = batteryPercent
+                }
+                // If receiving battery data, peripheral is functional - mark as ready even without init ACK
+                if !leftInitialized {
+                    Bridge.log("G1: Left glass sending data without init ACK (state: \(peripheralState.left)) - marking ready")
+                    leftInitialized = true
+                    updateConnectionState(for: peripheral, to: .ready)
+                    setReadiness(left: true, right: nil)
                 }
             } else if peripheral == rightPeripheral {
                 if rightBatteryLevel != batteryPercent {
-                    Bridge.log("G1: Right glass battery: \(batteryPercent)%")
+                    Bridge.log("G1: Right glass battery: \(batteryPercent)% (state: \(peripheralState.right))")
                     rightBatteryLevel = batteryPercent
+                }
+                // If receiving battery data, peripheral is functional - mark as ready even without init ACK
+                if !rightInitialized {
+                    Bridge.log("G1: Right glass sending data without init ACK (state: \(peripheralState.right)) - marking ready")
+                    rightInitialized = true
+                    updateConnectionState(for: peripheral, to: .ready)
+                    setReadiness(left: nil, right: true)
                 }
             }
 
@@ -1427,12 +1442,12 @@ class G1: NSObject, SGCManager {
         case .BLE_REQ_DEVICE_ORDER:
             let order = data[1]
             // Bridge.log("G1: DEVICE_ORDER received - raw value: 0x\(String(format: "%02X", order))")
-            
+
             switch DeviceOrders(rawValue: order) {
             case .DISPLAY_READY:
                 Bridge.log("G1: DISPLAY_READY")
-                // Note: G1 glasses do not send button press events over BLE
-                // DISPLAY_READY is sent after display updates, not button presses
+            // Note: G1 glasses do not send button press events over BLE
+            // DISPLAY_READY is sent after display updates, not button presses
             case .DOUBLE_TAP:
                 // Handle double-tap if glasses firmware sends it
                 let peripheralName = peripheral.name ?? "unknown"
@@ -1530,7 +1545,7 @@ class G1: NSObject, SGCManager {
 // MARK: Commands
 
 extension G1 {
-    // Handle whitelist functionality
+    /// Handle whitelist functionality
     func getWhitelistChunks() -> [[UInt8]] {
         // Define the hardcoded whitelist JSON
         let apps = [
@@ -1582,7 +1597,7 @@ extension G1 {
         }
     }
 
-    // Helper function to split JSON into chunks
+    /// Helper function to split JSON into chunks
     private func createWhitelistChunks(json: String) -> [[UInt8]] {
         let MAX_CHUNK_SIZE = 180 - 4 // Reserve space for the header
         guard let jsonData = json.data(using: .utf8) else { return [] }
@@ -1632,7 +1647,7 @@ extension G1 {
 
         if leftPeripheral == peripheral {
             queueChunks([initDataArray], sendLeft: true, sendRight: false, bypassReadyCheck: true)
-            
+
             // Set timeout to detect stuck stabilizing state
             DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) { [weak self] in
                 guard let self = self else { return }
@@ -1643,7 +1658,7 @@ extension G1 {
             }
         } else if rightPeripheral == peripheral {
             queueChunks([initDataArray], sendLeft: false, sendRight: true, bypassReadyCheck: true)
-            
+
             // Set timeout to detect stuck stabilizing state
             DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) { [weak self] in
                 guard let self = self else { return }
@@ -1677,7 +1692,7 @@ extension G1 {
         )
     }
 
-    // don't call semaphore signals here as it's handled elswhere:
+    /// don't call semaphore signals here as it's handled elswhere:
     private func handleInitResponse(from peripheral: CBPeripheral, success: Bool) {
         if peripheral == leftPeripheral {
             leftInitialized = success
@@ -1789,7 +1804,9 @@ extension G1 {
         }
 
         let key = sequenceNumber == -1 ? side : "\(side)-\(sequenceNumber)"
-        let waitTimeMs = Int((0.3 + (0.2 * Double(attemptNumber))) * 1000)
+        // Longer timeout for faulty right glass BLE radio
+        let baseTimeout = side == "R" ? 0.5 : 0.3
+        let waitTimeMs = Int((baseTimeout + (0.2 * Double(attemptNumber))) * 1000)
 
         return await ackManager.waitForAck(key: key, timeoutMs: waitTimeMs) {
             peripheral.writeValue(commandData, for: characteristic, type: .withResponse)
@@ -1799,7 +1816,7 @@ extension G1 {
         }
     }
 
-    // FAST BLE TRANSMISSION (.withoutResponse)
+    /// FAST BLE TRANSMISSION (.withoutResponse)
     func sendCommandToSideWithoutResponse(_ command: [UInt8], side: String) async {
         // Convert to Data
         let commandData = Data(command)
@@ -2069,7 +2086,7 @@ extension G1 {
         return invertedData
     }
 
-    // Core MentraOS-compatible BMP display implementation
+    /// Core MentraOS-compatible BMP display implementation
     private func sendBmp(bmpData: Data) async -> Bool {
         // Frame timing validation for animation smoothness
         let currentTime = Date()
@@ -2167,7 +2184,7 @@ extension G1 {
         return true
     }
 
-    // Helper function to calculate CRC32-XZ like MentraOS (matches Dart crclib)
+    /// Helper function to calculate CRC32-XZ like MentraOS (matches Dart crclib)
     private func calculateCRC32XZ(data: Data) -> UInt32 {
         // CRC32-XZ table-based implementation (matches Dart crclib exactly)
         let polynomial: UInt32 = 0x04C1_1DB7
@@ -2196,7 +2213,7 @@ extension G1 {
         return ~crc
     }
 
-    // Helper function to calculate CRC32 (simple implementation)
+    /// Helper function to calculate CRC32 (simple implementation)
     private func calculateCRC32(data: Data) -> UInt32 {
         let polynomial: UInt32 = 0xEDB8_8320
         var crc: UInt32 = 0xFFFF_FFFF
@@ -2345,7 +2362,7 @@ extension G1: CBCentralManagerDelegate, CBPeripheralDelegate {
         }
     }
 
-    // On BT discovery, automatically connect to both arms if we have them:
+    /// On BT discovery, automatically connect to both arms if we have them:
     func centralManager(
         _: CBCentralManager, didDiscover peripheral: CBPeripheral, advertisementData: [String: Any],
         rssi _: NSNumber
@@ -2405,10 +2422,10 @@ extension G1: CBCentralManagerDelegate, CBPeripheralDelegate {
     func centralManager(_: CBCentralManager, didConnect peripheral: CBPeripheral) {
         // BLE operations stay on _bluetoothQueue (where this callback runs)
         peripheral.delegate = self
-        
+
         // Update state to connecting
         updateConnectionState(for: peripheral, to: .connecting)
-        
+
         peripheral.discoverServices([UART_SERVICE_UUID])
 
         DispatchQueue.main.async { [weak self] in
@@ -2438,10 +2455,10 @@ extension G1: CBCentralManagerDelegate, CBPeripheralDelegate {
             peripheral == leftPeripheral
                 ? "LEFT" : peripheral == rightPeripheral ? "RIGHT" : "unknown"
         Bridge.log("G1: @@@@@ \(side) PERIPHERAL DISCONNECTED @@@@@")
-        
+
         // Update state to disconnected
         updateConnectionState(for: peripheral, to: .disconnected)
-        
+
         // Clear command queue on disconnect
         Task {
             await commandQueue.clear()
@@ -2453,12 +2470,11 @@ extension G1: CBCentralManagerDelegate, CBPeripheralDelegate {
             return
         }
 
+        // Immediate reconnection (like EvenDemoApp) - don't clear peripheral references
         if peripheral == leftPeripheral || peripheral == rightPeripheral {
-            // force reconnection to both before considering us ready again:
-            leftPeripheral = nil
-            rightPeripheral = nil
             setReadiness(left: false, right: false)
-            startReconnectionTimer() // Start periodic reconnection attempts
+            Bridge.log("G1: Immediately reconnecting \(side) peripheral")
+            centralManager!.connect(peripheral, options: [CBConnectPeripheralOptionNotifyOnDisconnectionKey: true])
         }
     }
 
@@ -2471,36 +2487,36 @@ extension G1: CBCentralManagerDelegate, CBPeripheralDelegate {
                 let shouldReconnect = await MainActor.run { () -> Bool in
                     let leftState = self.peripheralState.left
                     let rightState = self.peripheralState.right
-                    
+
                     // Stop reconnection if both are ready
                     if self.ready {
                         Bridge.log("G1: Already connected, stopping reconnection")
                         return true // Stop reconnection loop
                     }
-                    
+
                     // Don't reconnect if either peripheral is actively connecting/discovering/stabilizing
                     let leftConnecting = leftState == .connecting || leftState == .discovering || leftState == .stabilizing
                     let rightConnecting = rightState == .connecting || rightState == .discovering || rightState == .stabilizing
-                    
+
                     if leftConnecting || rightConnecting {
                         Bridge.log("G1: Connection in progress (L:\(leftState) R:\(rightState)), skipping reconnection attempt")
                         return false // Keep loop running but skip this attempt
                     }
-                    
+
                     return false // Proceed with reconnection
                 }
-                
+
                 // If we should stop or skip, return early
                 if shouldReconnect {
                     return true
                 }
-                
+
                 // Reconnect any disconnected peripherals
                 let needsReconnect = await MainActor.run {
-                    self.peripheralState.left == .disconnected || 
-                    self.peripheralState.right == .disconnected
+                    self.peripheralState.left == .disconnected ||
+                        self.peripheralState.right == .disconnected
                 }
-                
+
                 if needsReconnect {
                     Bridge.log("G1: Attempting reconnection...")
                     await MainActor.run {
@@ -2519,7 +2535,7 @@ extension G1: CBCentralManagerDelegate, CBPeripheralDelegate {
         }
     }
 
-    // Connect by UUID
+    /// Connect by UUID
     func connectByUUID() -> Bool {
         // don't do this if we don't have a search id set:
         if DEVICE_SEARCH_ID == "NOT_SET" || DEVICE_SEARCH_ID.isEmpty {
@@ -2528,49 +2544,50 @@ extension G1: CBCentralManagerDelegate, CBPeripheralDelegate {
         }
 
         Bridge.log("G1: 🔵 Attempting to connect by UUID")
-        var foundAny = false
+
+        // Retrieve both peripherals first
+        var leftDevice: CBPeripheral?
+        var rightDevice: CBPeripheral?
 
         if let leftUUID = leftGlassUUID {
             Bridge.log("G1: 🔵 Found stored left glass UUID: \(leftUUID.uuidString)")
             let leftDevices = centralManager!.retrievePeripherals(withIdentifiers: [leftUUID])
-
-            if let leftDevice = leftDevices.first {
-                Bridge.log(
-                    "G1: 🔵 Successfully retrieved left glass: \(leftDevice.name ?? "Unknown")")
-                foundAny = true
-                leftPeripheral = leftDevice
-                leftDevice.delegate = self
-                centralManager!.connect(
-                    leftDevice,
-                    options: [
-                        CBConnectPeripheralOptionNotifyOnConnectionKey: true,
-                        CBConnectPeripheralOptionNotifyOnDisconnectionKey: true,
-                    ]
-                )
+            if let device = leftDevices.first {
+                Bridge.log("G1: 🔵 Successfully retrieved left glass: \(device.name ?? "Unknown")")
+                leftDevice = device
+                leftPeripheral = device
+                device.delegate = self
             }
         }
 
         if let rightUUID = rightGlassUUID {
             Bridge.log("G1: 🔵 Found stored right glass UUID: \(rightUUID.uuidString)")
             let rightDevices = centralManager!.retrievePeripherals(withIdentifiers: [rightUUID])
-
-            if let rightDevice = rightDevices.first {
-                Bridge.log(
-                    "G1: 🔵 Successfully retrieved right glass: \(rightDevice.name ?? "Unknown")")
-                foundAny = true
-                rightPeripheral = rightDevice
-                rightDevice.delegate = self
-                centralManager!.connect(
-                    rightDevice,
-                    options: [
-                        CBConnectPeripheralOptionNotifyOnConnectionKey: true,
-                        CBConnectPeripheralOptionNotifyOnDisconnectionKey: true,
-                    ]
-                )
+            if let device = rightDevices.first {
+                Bridge.log("G1: 🔵 Successfully retrieved right glass: \(device.name ?? "Unknown")")
+                rightDevice = device
+                rightPeripheral = device
+                device.delegate = self
             }
         }
 
-        return foundAny
+        // Connect BOTH simultaneously (like EvenDemoApp)
+        if let left = leftDevice, let right = rightDevice {
+            Bridge.log("G1: 🔵 Connecting to both glasses simultaneously: \(left.name ?? "?"), \(right.name ?? "?")")
+            centralManager!.connect(left, options: [CBConnectPeripheralOptionNotifyOnDisconnectionKey: true])
+            centralManager!.connect(right, options: [CBConnectPeripheralOptionNotifyOnDisconnectionKey: true])
+            return true
+        } else if let left = leftDevice {
+            Bridge.log("G1: 🔵 Connecting to left glass only: \(left.name ?? "?")")
+            centralManager!.connect(left, options: [CBConnectPeripheralOptionNotifyOnDisconnectionKey: true])
+            return true
+        } else if let right = rightDevice {
+            Bridge.log("G1: 🔵 Connecting to right glass only: \(right.name ?? "?")")
+            centralManager!.connect(right, options: [CBConnectPeripheralOptionNotifyOnDisconnectionKey: true])
+            return true
+        }
+
+        return false
     }
 
     func peripheral(_ peripheral: CBPeripheral, didDiscoverServices _: Error?) {
@@ -2583,7 +2600,7 @@ extension G1: CBCentralManagerDelegate, CBPeripheralDelegate {
         }
     }
 
-    // Update peripheral(_:didDiscoverCharacteristicsFor:error:) to set services waiters
+    /// Update peripheral(_:didDiscoverCharacteristicsFor:error:) to set services waiters
     func peripheral(
         _ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService,
         error _: Error?
@@ -2593,12 +2610,12 @@ extension G1: CBCentralManagerDelegate, CBPeripheralDelegate {
         if service.uuid.isEqual(UART_SERVICE_UUID) {
             // Update state to discovering
             updateConnectionState(for: peripheral, to: .discovering)
-            
+
             for characteristic in characteristics {
                 if characteristic.uuid == UART_TX_CHAR_UUID {
                     // Transition to stabilizing state with delay before sending init
                     updateConnectionState(for: peripheral, to: .stabilizing)
-                    
+
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
                         guard let self = self else { return }
                         self.sendInitCommand(to: peripheral)
@@ -2611,7 +2628,7 @@ extension G1: CBCentralManagerDelegate, CBPeripheralDelegate {
         }
     }
 
-    // called whenever bluetooth is initialized / turned on or off:
+    /// called whenever bluetooth is initialized / turned on or off:
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
@@ -2629,7 +2646,7 @@ extension G1: CBCentralManagerDelegate, CBPeripheralDelegate {
         }
     }
 
-    // called when we get data from the glasses:
+    /// called when we get data from the glasses:
     func peripheral(
         _ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic,
         error: Error?
@@ -2650,7 +2667,7 @@ extension G1: CBCentralManagerDelegate, CBPeripheralDelegate {
         }
     }
 
-    // L/R Synchronization - Handle BLE write completions
+    /// L/R Synchronization - Handle BLE write completions
     func peripheral(_ peripheral: CBPeripheral, didWriteValueFor _: CBCharacteristic, error: Error?) {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
